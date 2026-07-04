@@ -1,0 +1,202 @@
+'use client'
+
+// -- NEXTAUTH (re-enable by uncommenting) --
+// import { signIn, signOut, useSession } from 'next-auth/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Header } from './Header'
+import { ChatSurface } from './ChatSurface'
+import { InputDock } from './InputDock'
+import { VoiceOverlay } from './VoiceOverlay'
+import { Settings } from './Settings'
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
+import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
+import { useWakeWord } from '@/hooks/useWakeWord'
+import type { AssistantState, Message, UserPreferences } from '@/types'
+
+const DEFAULT_PREFS: UserPreferences = {
+  voiceName: 'default',
+  voiceRate: 1.0,
+  voicePitch: 1.0,
+  wakeWordEnabled: false,
+  wakeWord: 'hey connection',
+  ttsProvider: 'browser',
+}
+
+export function VoiceAssistant() {
+  // -- NEXTAUTH (re-enable) --
+  // const { data: session } = useSession()
+
+  const [messages, setMessages] = useState<Message[]>([])
+  const [state, setState] = useState<AssistantState>('idle')
+  const [error, setError] = useState<string>('')
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [voiceMode, setVoiceMode] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFS)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('voice-assistant-prefs')
+    if (saved) {
+      try { setPreferences({ ...DEFAULT_PREFS, ...JSON.parse(saved) }) } catch {}
+    }
+  }, [])
+
+  const savePreferences = useCallback((updates: Partial<UserPreferences>) => {
+    setPreferences(prev => {
+      const next = { ...prev, ...updates }
+      localStorage.setItem('voice-assistant-prefs', JSON.stringify(next))
+      return next
+    })
+  }, [])
+
+  const { speak, stop: stopSpeaking, isSpeaking, voices } = useSpeechSynthesis(preferences)
+
+  const handleTranscript = useCallback(async (text: string) => {
+    if (!text.trim() || state === 'processing') return
+    setError('')
+    setState('processing')
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text,
+      createdAt: new Date(),
+    }
+    setMessages(prev => [...prev, userMsg])
+
+    try {
+      abortRef.current = new AbortController()
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, conversationId }),
+        signal: abortRef.current.signal,
+      })
+
+      if (!res.ok) throw new Error('Failed to get response')
+      const data = await res.json()
+      if (data.conversationId) setConversationId(data.conversationId)
+
+      const assistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: data.response,
+        createdAt: new Date(),
+      }
+      setMessages(prev => [...prev, assistantMsg])
+      setState('speaking')
+      speak(data.response)
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      setError('Failed to get response. Check your API key.')
+      setState('idle')
+    }
+  }, [state, conversationId, speak])
+
+  useEffect(() => {
+    if (state === 'speaking' && !isSpeaking) setState('idle')
+  }, [isSpeaking, state])
+
+  const { isListening, isSupported, start, stop, interimTranscript } = useSpeechRecognition({
+    onTranscript: handleTranscript,
+    onError: (err) => { setError(err); setState('idle') },
+  })
+
+  useEffect(() => {
+    if (isListening) setState('listening')
+    else if (state === 'listening') setState('idle')
+  }, [isListening]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wake word opens voice mode hands-free
+  useWakeWord({
+    wakeWord: preferences.wakeWord,
+    enabled: preferences.wakeWordEnabled && state === 'idle' && !voiceMode,
+    onDetected: useCallback(() => {
+      if (state === 'idle') {
+        setVoiceMode(true)
+        start()
+      }
+    }, [state, start]),
+  })
+
+  // Orb tap inside voice mode: cycles the interaction state machine
+  const handleOrbClick = useCallback(() => {
+    if (state === 'speaking') { stopSpeaking(); setState('idle'); return }
+    if (state === 'listening') { stop(); return }
+    if (state === 'processing') { abortRef.current?.abort(); setState('idle'); return }
+    start()
+  }, [state, stopSpeaking, stop, start])
+
+  // Mic button in the dock: enter voice mode and start listening
+  const handleEnterVoiceMode = useCallback(() => {
+    setVoiceMode(true)
+    if (state === 'idle' && isSupported) start()
+  }, [state, isSupported, start])
+
+  // Exit voice mode: quiesce everything
+  const handleExitVoiceMode = useCallback(() => {
+    setVoiceMode(false)
+    stopSpeaking()
+    stop()
+    abortRef.current?.abort()
+    setState('idle')
+  }, [stopSpeaking, stop])
+
+  const lastReply = [...messages].reverse().find(m => m.role === 'assistant')?.content ?? ''
+
+  return (
+    <div className="relative w-screen h-screen overflow-hidden flex flex-col bg-void">
+      {/* Ambient aurora backdrop */}
+      <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="aurora-blob aurora-1" />
+        <div className="aurora-blob aurora-2" />
+        <div className="aurora-blob aurora-3" />
+      </div>
+
+      <Header
+        state={state}
+        wakeWordEnabled={preferences.wakeWordEnabled}
+        wakeWord={preferences.wakeWord}
+        onSettingsClick={() => setShowSettings(true)}
+      />
+
+      <div className="relative z-10 flex-1 flex flex-col overflow-hidden min-h-0">
+        <ChatSurface
+          messages={messages}
+          state={state}
+          error={error}
+          interimTranscript={voiceMode ? '' : interimTranscript}
+          onPrompt={handleTranscript}
+        />
+
+        <InputDock
+          state={state}
+          isSupported={isSupported}
+          onSubmitText={handleTranscript}
+          onVoiceMode={handleEnterVoiceMode}
+        />
+      </div>
+
+      {voiceMode && (
+        <VoiceOverlay
+          state={state}
+          interimTranscript={interimTranscript}
+          lastReply={lastReply}
+          error={error}
+          onOrbClick={handleOrbClick}
+          onClose={handleExitVoiceMode}
+        />
+      )}
+
+      {showSettings && (
+        <Settings
+          preferences={preferences}
+          onChange={savePreferences}
+          voices={voices}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </div>
+  )
+}
