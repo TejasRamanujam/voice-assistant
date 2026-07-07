@@ -17,11 +17,23 @@ export function Settings({ preferences, onChange, voices, onClose }: SettingsPro
     if (voices.length > 0) setLocalVoices(voices)
   }, [voices])
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
 
-      <div className="glass-edge relative z-10 w-full max-w-md rounded-t-shell sm:rounded-shell border border-line-strong bg-raised/80 backdrop-blur-2xl p-6 shadow-[0_24px_80px_-16px_rgba(0,0,0,0.8),0_0_40px_-20px_rgba(124,92,255,0.4)] animate-msg-in">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        className="glass-edge relative z-10 w-full max-w-md rounded-t-shell sm:rounded-shell border border-line-strong bg-raised/80 backdrop-blur-2xl p-6 shadow-[0_24px_80px_-16px_rgba(0,0,0,0.8),0_0_40px_-20px_rgba(124,92,255,0.4)] animate-msg-in">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-base font-semibold text-ink">Settings</h2>
           <button
