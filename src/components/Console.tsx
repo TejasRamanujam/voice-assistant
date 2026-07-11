@@ -150,11 +150,9 @@ export function Console() {
     start()
   }, [state, stopSpeaking, stop, start])
 
-  // Mic button in the transmit bar: open the deck and start listening
-  const handleEnterVoiceMode = useCallback(() => {
-    setVoiceMode(true)
-    if (state === 'idle' && isSupported) start()
-  }, [state, isSupported, start])
+  // Mic button in the transmit bar: listen INLINE — the strip chart is the
+  // trace, words land in the log. (The deck stays reserved for the wake word.)
+  const handleEnterVoiceMode = handleKeyClick
 
   // Leaving the deck: quiesce everything
   const handleExitVoiceMode = useCallback(() => {
