@@ -50,7 +50,7 @@ export function Masthead({ state, wakeWordEnabled, wakeWord, onSettingsClick }: 
             onClick={onSettingsClick}
             className="wire-link py-1 uppercase tracking-tele text-ink-mid hover:text-signal"
           >
-            Tune
+            Settings
           </button>
         </div>
       </div>

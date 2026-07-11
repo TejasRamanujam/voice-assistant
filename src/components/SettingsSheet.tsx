@@ -38,12 +38,12 @@ export function SettingsSheet({ preferences, voices, onChange, onClose }: Settin
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Tune the station"
+        aria-label="Settings"
         className="relative w-full sm:w-[380px] sm:h-full max-h-[85vh] sm:max-h-none overflow-y-auto log-scroll
                    bg-paper border-t-2 sm:border-t-0 sm:border-l-2 border-ink px-5 sm:px-7 py-6 animate-sheet-in"
       >
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display font-black text-3xl text-ink">Tune</h2>
+          <h2 className="font-display font-black text-3xl text-ink">Settings</h2>
           <button
             ref={closeRef}
             onClick={onClose}
