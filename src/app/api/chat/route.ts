@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type OpenAI from 'openai'
-import { client, MAX_TOKENS, MODEL, SYSTEM_PROMPT } from '@/lib/anthropic'
+import { getClient, MAX_TOKENS, MODEL, SYSTEM_PROMPT } from '@/lib/anthropic'
 import { executeTool, openaiToolDefinitions } from '@/lib/tools'
 
 // -- NEXTAUTH/PERSISTENCE (re-enable with NextAuth) --
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     // Agentic loop — handles tool calls until end_turn
     while (true) {
-      const response = await client.chat.completions.create({
+      const response = await getClient().chat.completions.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         tools: openaiToolDefinitions,
