@@ -5,10 +5,17 @@
 
 import OpenAI from 'openai'
 // Gemini via its OpenAI-compatible endpoint (supports tool-calling).
-export const client = new OpenAI({
-  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-  apiKey: process.env.GEMINI_API_KEY,
-})
+// Lazily constructed: the SDK constructor throws when the API key is
+// missing, which breaks `next build` page-data collection if the client
+// is created at module load.
+let _client: OpenAI | undefined
+export function getClient() {
+  _client ??= new OpenAI({
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    apiKey: process.env.GEMINI_API_KEY,
+  })
+  return _client
+}
 export const MODEL = 'gemini-2.5-flash'
 
 export const SYSTEM_PROMPT = `You are a helpful, conversational AI voice assistant.
