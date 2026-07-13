@@ -9,6 +9,8 @@ interface TransmissionLogProps {
   error: string
   interimTranscript: string
   onPrompt: (text: string) => void
+  voiceUnsupported?: boolean
+  onPlayDemo?: () => void
 }
 
 const SUGGESTIONS = [
@@ -28,6 +30,8 @@ export function TransmissionLog({
   error,
   interimTranscript,
   onPrompt,
+  voiceUnsupported,
+  onPlayDemo,
 }: TransmissionLogProps) {
   const endRef = useRef<HTMLDivElement | null>(null)
 
@@ -64,6 +68,17 @@ export function TransmissionLog({
               </li>
             ))}
           </ul>
+          {voiceUnsupported && (
+            <p className="mt-7 text-[12px] leading-relaxed text-ink-dim max-w-md">
+              This browser has no speech recognition (Safari and iOS don&rsquo;t expose it), so
+              voice is off — typing works fully.{' '}
+              {onPlayDemo && (
+                <button onClick={onPlayDemo} className="wire-link text-signal">
+                  Watch a sample exchange
+                </button>
+              )}
+            </p>
+          )}
         </div>
         <div ref={endRef} />
       </div>

@@ -1,5 +1,5 @@
 jest.mock('@/lib/anthropic', () => ({
-  client: {
+  getClient: () => ({
     chat: {
       completions: {
         create: jest.fn().mockResolvedValue({
@@ -7,13 +7,13 @@ jest.mock('@/lib/anthropic', () => ({
         }),
       },
     },
-  },
+  }),
   MODEL: 'deepseek-chat',
   MAX_TOKENS: 1024,
   SYSTEM_PROMPT: 'You are a helpful voice assistant.',
 }))
 
-import { MODEL, SYSTEM_PROMPT, client } from '@/lib/anthropic'
+import { MODEL, SYSTEM_PROMPT, getClient } from '@/lib/anthropic'
 import { executeTool, openaiToolDefinitions } from '@/lib/tools'
 
 describe('LLM config', () => {
@@ -26,7 +26,8 @@ describe('LLM config', () => {
     expect(SYSTEM_PROMPT.length).toBeGreaterThan(0)
   })
 
-  it('client.chat.completions.create is callable', async () => {
+  it('getClient().chat.completions.create is callable', async () => {
+    const client = getClient()
     const result = await client.chat.completions.create({
       model: MODEL,
       max_tokens: 512,

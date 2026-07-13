@@ -28,6 +28,14 @@ const STATE_LABEL: Record<AssistantState, string> = {
   speaking: 'speaking',
 }
 
+// Scripted exchange for browsers without speech recognition (Safari/iOS):
+// shows the voice flow without a microphone. Client-side only.
+const DEMO_EXCHANGE: Array<[string, string]> = [
+  ['What time is it right now?', 'It’s 3:42 in the afternoon.'],
+  ['Add “water the ferns” to my list', 'Done — “water the ferns” is on your list.'],
+  ['What’s on my calendar this week?', 'Two events: a project review on Wednesday and coffee with Sam on Friday at nine.'],
+]
+
 export function Console() {
   const [messages, setMessages] = useState<Message[]>([])
   const [state, setState] = useState<AssistantState>('idle')
@@ -37,6 +45,33 @@ export function Console() {
   const [showSettings, setShowSettings] = useState(false)
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFS)
   const abortRef = useRef<AbortController | null>(null)
+  const demoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  useEffect(() => () => demoTimersRef.current.forEach(clearTimeout), [])
+
+  const playDemo = useCallback(() => {
+    let delay = 0
+    DEMO_EXCHANGE.forEach(([question, answer], i) => {
+      delay += 500
+      demoTimersRef.current.push(
+        setTimeout(() => {
+          setMessages(prev => [
+            ...prev,
+            { id: `demo-u-${i}`, role: 'user', content: question, createdAt: new Date() },
+          ])
+        }, delay)
+      )
+      delay += 1100
+      demoTimersRef.current.push(
+        setTimeout(() => {
+          setMessages(prev => [
+            ...prev,
+            { id: `demo-a-${i}`, role: 'assistant', content: answer, createdAt: new Date() },
+          ])
+        }, delay)
+      )
+    })
+  }, [])
 
   useEffect(() => {
     const saved = localStorage.getItem('voice-assistant-prefs')
@@ -192,6 +227,8 @@ export function Console() {
           error={error}
           interimTranscript={voiceMode ? '' : interimTranscript}
           onPrompt={handleTranscript}
+          voiceUnsupported={!isSupported}
+          onPlayDemo={playDemo}
         />
         <TransmitBar
           state={state}

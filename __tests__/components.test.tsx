@@ -108,4 +108,17 @@ describe('TransmissionLog', () => {
     render(<TransmissionLog {...baseProps} error="Mic denied" />)
     expect(screen.getByRole('alert')).toHaveTextContent('Mic denied')
   })
+
+  it('offers the sample exchange when voice is unsupported', () => {
+    const onPlayDemo = jest.fn()
+    render(<TransmissionLog {...baseProps} voiceUnsupported onPlayDemo={onPlayDemo} />)
+    expect(screen.getByText(/no speech recognition/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByText(/watch a sample exchange/i))
+    expect(onPlayDemo).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the voice hint when voice is supported', () => {
+    render(<TransmissionLog {...baseProps} />)
+    expect(screen.queryByText(/no speech recognition/i)).not.toBeInTheDocument()
+  })
 })
