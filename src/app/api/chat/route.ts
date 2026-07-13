@@ -75,6 +75,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ response: responseText, conversationId: null })
   } catch (error) {
     console.error('Chat error:', error)
+    // Surface upstream rate limiting so the UI can say something honest.
+    const status = (error as { status?: number })?.status
+    if (status === 429) {
+      return NextResponse.json({ error: 'rate_limited' }, { status: 429 })
+    }
     return NextResponse.json({ error: 'Failed to process message' }, { status: 500 })
   }
 }

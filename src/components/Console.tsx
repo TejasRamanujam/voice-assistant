@@ -115,6 +115,11 @@ export function Console() {
           signal: abortRef.current.signal,
         })
 
+        if (res.status === 429) {
+          setError('The relay is over its free-tier rate limit — give it a minute and try again.')
+          setState('idle')
+          return
+        }
         if (!res.ok) throw new Error('Failed to get response')
         const data = await res.json()
         if (data.conversationId) setConversationId(data.conversationId)
