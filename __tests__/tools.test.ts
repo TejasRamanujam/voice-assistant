@@ -36,9 +36,10 @@ describe('executeTool', () => {
     expect(result).toContain('Test task for listing')
   })
 
-  it('web_search returns informative message', async () => {
+  it('web_search falls back gracefully without an API key', async () => {
     const result = await executeTool('web_search', { query: 'latest news' })
     expect(result).toContain('latest news')
+    expect(result).toContain('unavailable')
   })
 
   it('unknown tool returns error message', async () => {

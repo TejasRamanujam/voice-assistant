@@ -114,6 +114,41 @@ interface TodoItem {
 
 const todoStore: TodoItem[] = []
 
+/** Live web search via Gemini's Google Search grounding (runs server-side). */
+async function searchWeb(query: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    return `Web search is not configured, so no live results for "${query}". Answer from your own knowledge and say the search was unavailable.`
+  }
+  try {
+    const res = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: query }] }],
+          tools: [{ google_search: {} }],
+        }),
+      }
+    )
+    if (!res.ok) throw new Error(`grounding request failed: ${res.status}`)
+    const data = await res.json()
+    const parts: Array<{ text?: string }> = data.candidates?.[0]?.content?.parts ?? []
+    const answer = parts.map(p => p.text ?? '').join('').trim()
+    if (!answer) throw new Error('empty grounding response')
+    const chunks: Array<{ web?: { uri?: string; title?: string } }> =
+      data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []
+    const sources = chunks
+      .map(c => c.web?.title || c.web?.uri)
+      .filter(Boolean)
+      .slice(0, 3)
+    return sources.length ? `${answer}\n\nSources: ${sources.join(', ')}` : answer
+  } catch {
+    return `Web search failed for "${query}" — answer from your own knowledge and say the search was unavailable.`
+  }
+}
+
 export async function executeTool(
   toolName: string,
   toolInput: Record<string, unknown>
@@ -121,7 +156,7 @@ export async function executeTool(
   switch (toolName) {
     case 'web_search': {
       const query = toolInput.query as string
-      return `Web search results for "${query}": I don't have live internet access in this demo, but I can answer questions from my training data up to my knowledge cutoff. For real-time data, please check a browser.`
+      return searchWeb(query)
     }
 
     case 'get_current_time': {
