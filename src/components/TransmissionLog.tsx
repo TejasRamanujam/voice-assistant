@@ -115,9 +115,21 @@ export function TransmissionLog({
                   {m.content}
                 </p>
               ) : (
-                <p className="mt-3 font-display text-[clamp(1.15rem,3vw,1.55rem)] leading-[1.35] text-ink whitespace-pre-wrap">
-                  {m.content}
-                </p>
+                <>
+                  <p className="mt-3 font-display text-[clamp(1.15rem,3vw,1.55rem)] leading-[1.35] text-ink whitespace-pre-wrap">
+                    {m.content}
+                  </p>
+                  {m.tools && m.tools.length > 0 && (
+                    <ul className="mt-4 border-l border-signal/40 pl-3 space-y-1.5" aria-label="Tools used">
+                      {m.tools.map((tool, index) => (
+                        <li key={`${tool.toolName}-${index}`} className="text-[10px] sm:text-[11px] tracking-tele uppercase text-ink-dim">
+                          <span className="text-signal font-semibold">relay {String(index + 1).padStart(2, '0')}</span>
+                          {' · '}{tool.toolName.replaceAll('_', ' ')}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
               )}
               <div className="log-rule mt-5 sm:mt-6" aria-hidden="true" />
             </article>

@@ -1,10 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { MAX_TTS_CHARS, RATE_LIMITS } from '@/lib/limits'
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
-  const { text, provider = 'openai' } = await req.json()
+  const ip = getClientIp(req.headers)
+  const quota = checkRateLimit(`tts:${ip}`, RATE_LIMITS.tts.limit, RATE_LIMITS.tts.windowMs)
+  if (!quota.allowed) {
+    return NextResponse.json(
+      { error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(quota.retryAfter) } }
+    )
+  }
 
-  if (!text?.trim()) {
+  const contentLength = Number(req.headers.get('content-length') || 0)
+  if (contentLength > 16 * 1024) {
+    return NextResponse.json({ error: 'Request body is too large' }, { status: 413 })
+  }
+
+  const body = await req.json()
+  const text = typeof body?.text === 'string' ? body.text.trim() : ''
+  const provider = body?.provider ?? 'openai'
+
+  if (!text) {
     return NextResponse.json({ error: 'Text is required' }, { status: 400 })
+  }
+  if (text.length > MAX_TTS_CHARS) {
+    return NextResponse.json(
+      { error: `Text must be ${MAX_TTS_CHARS} characters or fewer` },
+      { status: 413 }
+    )
   }
 
   if (provider === 'openai') {

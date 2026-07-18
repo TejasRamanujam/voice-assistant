@@ -15,8 +15,13 @@ jest.mock('@/lib/anthropic', () => ({
 
 import { MODEL, SYSTEM_PROMPT, getClient } from '@/lib/anthropic'
 import { executeTool, openaiToolDefinitions } from '@/lib/tools'
+import { MAX_AGENT_STEPS, MAX_MESSAGE_CHARS } from '@/lib/limits'
 
 describe('LLM config', () => {
+  it('bounds public demo input and agent work', () => {
+    expect(MAX_MESSAGE_CHARS).toBeLessThanOrEqual(2000)
+    expect(MAX_AGENT_STEPS).toBeLessThanOrEqual(8)
+  })
   it('exports MODEL string', () => {
     expect(typeof MODEL).toBe('string')
     expect(MODEL.length).toBeGreaterThan(0)

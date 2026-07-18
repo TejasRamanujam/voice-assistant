@@ -129,6 +129,7 @@ export function Console() {
           role: 'assistant',
           content: data.response,
           createdAt: new Date(),
+          tools: data.toolResults,
         }
         setMessages(prev => [...prev, assistantMsg])
         setState('speaking')
