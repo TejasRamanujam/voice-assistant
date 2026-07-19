@@ -107,4 +107,30 @@ describe('streaming chat route', () => {
       },
     ])
   })
+
+  it('preserves grounded sources in a capped tool receipt', async () => {
+    mockCreate
+      .mockResolvedValueOnce(streamOf(
+        {
+          choices: [{
+            delta: {
+              tool_calls: [{ index: 0, id: 'call_1', function: { name: 'web_search', arguments: '{"query":"news"}' } }],
+            },
+            finish_reason: 'tool_calls',
+          }],
+        },
+      ))
+      .mockResolvedValueOnce(streamOf(
+        { choices: [{ delta: { content: 'Summary.' }, finish_reason: 'stop' }] },
+      ))
+    mockExecuteTool.mockResolvedValue(
+      `${'A'.repeat(600)}\n\nSources:\nExample — https://example.com/report`
+    )
+
+    const response = await POST(request('news?', '203.0.113.3'))
+    const done = events(await response.text()).find((event) => event.type === 'done')
+
+    expect(done.toolResults[0].result).toContain('Sources: Example — https://example.com/report')
+    expect(done.toolResults[0].result.length).toBeLessThanOrEqual(720)
+  })
 })

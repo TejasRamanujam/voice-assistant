@@ -20,7 +20,20 @@ type StreamToolCall = {
 }
 
 function receipt(result: string) {
-  return result.replace(/\s+/g, ' ').slice(0, 420)
+  const sourceMarker = result.search(/\n\nSources:\s*/i)
+  if (sourceMarker < 0) return result.replace(/\s+/g, ' ').slice(0, 420)
+
+  const answer = result.slice(0, sourceMarker).replace(/\s+/g, ' ').trim()
+  const sources = result
+    .slice(sourceMarker)
+    .replace(/^\s*Sources:\s*/i, '')
+    .split('\n')
+    .map((source) => source.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' · ')
+    .slice(0, 420)
+  return `${answer.slice(0, 260)}${answer.length > 260 ? '…' : ''} Sources: ${sources}`.slice(0, 720)
 }
 
 function ndjson(value: object) {
