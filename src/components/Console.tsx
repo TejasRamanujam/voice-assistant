@@ -10,7 +10,7 @@ import { SettingsSheet } from './SettingsSheet'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
 import { useWakeWord } from '@/hooks/useWakeWord'
-import type { AssistantState, Message, UserPreferences } from '@/types'
+import type { AssistantState, Message, ToolResult, UserPreferences } from '@/types'
 
 const DEFAULT_PREFS: UserPreferences = {
   voiceName: 'default',
@@ -158,6 +158,7 @@ export function Console() {
           name?: string
           error?: string
           conversationId?: string | null
+          toolResults?: ToolResult[]
         }) => {
           if (event.type === 'delta' && event.text) {
             responseText += event.text
@@ -175,8 +176,15 @@ export function Console() {
                   }
                 : message
             ))
-          } else if (event.type === 'done' && event.conversationId) {
-            setConversationId(event.conversationId)
+          } else if (event.type === 'done') {
+            if (event.conversationId) setConversationId(event.conversationId)
+            if (event.toolResults) {
+              setMessages(prev => prev.map(message =>
+                message.id === assistantId
+                  ? { ...message, tools: event.toolResults }
+                  : message
+              ))
+            }
           } else if (event.type === 'error') {
             streamError = event.error ?? 'failed'
           }

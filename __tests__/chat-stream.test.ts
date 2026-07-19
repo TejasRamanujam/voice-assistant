@@ -61,7 +61,10 @@ describe('streaming chat route', () => {
       { type: 'delta', text: ' there' },
       { type: 'done', conversationId: null, toolResults: [] },
     ])
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ stream: true }))
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ stream: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
   })
 
   it('reassembles tool-call fragments and continues to the final answer', async () => {

@@ -1,6 +1,7 @@
 export const MAX_MESSAGE_CHARS = 1200
 export const MAX_AGENT_STEPS = 4
 export const MAX_TOOL_CALLS_PER_STEP = 2
+export const CHAT_STREAM_TIMEOUT_MS = 25_000
 export const MAX_TTS_CHARS = 1800
 export const MAX_AUDIO_BYTES = 5 * 1024 * 1024
 

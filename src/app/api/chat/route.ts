@@ -3,6 +3,7 @@ import type OpenAI from 'openai'
 import { getClient, MAX_TOKENS, MODEL, SYSTEM_PROMPT } from '@/lib/anthropic'
 import { executeTool, openaiToolDefinitions } from '@/lib/tools'
 import {
+  CHAT_STREAM_TIMEOUT_MS,
   MAX_AGENT_STEPS,
   MAX_MESSAGE_CHARS,
   MAX_TOOL_CALLS_PER_STEP,
@@ -19,7 +20,7 @@ type StreamToolCall = {
 }
 
 function receipt(result: string) {
-  return result.replace(/\s+/g, ' ').slice(0, 180)
+  return result.replace(/\s+/g, ' ').slice(0, 420)
 }
 
 function ndjson(value: object) {
@@ -70,13 +71,16 @@ export async function POST(req: NextRequest) {
 
           // Tool-call turns stay internal; only the final answer is streamed.
           for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
-            const completion = await getClient().chat.completions.create({
-              model: MODEL,
-              max_tokens: MAX_TOKENS,
-              tools: openaiToolDefinitions,
-              messages,
-              stream: true,
-            })
+            const completion = await getClient().chat.completions.create(
+              {
+                model: MODEL,
+                max_tokens: MAX_TOKENS,
+                tools: openaiToolDefinitions,
+                messages,
+                stream: true,
+              },
+              { signal: AbortSignal.timeout(CHAT_STREAM_TIMEOUT_MS) }
+            )
             const toolCalls = new Map<number, StreamToolCall>()
             let finishReason: string | null = null
 
