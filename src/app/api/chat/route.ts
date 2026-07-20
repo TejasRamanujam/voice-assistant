@@ -76,7 +76,15 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder()
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const send = (event: object) => controller.enqueue(encoder.encode(ndjson(event)))
+        // enqueue throws once the client disconnects; swallow it so the agent
+        // loop can wind down instead of crashing the invocation.
+        const send = (event: object) => {
+          try {
+            controller.enqueue(encoder.encode(ndjson(event)))
+          } catch {
+            /* client gone */
+          }
+        }
 
         try {
           let responseText = ''
@@ -165,7 +173,11 @@ export async function POST(req: NextRequest) {
           const status = (error as { status?: number })?.status
           send({ type: 'error', error: status === 429 ? 'rate_limited' : 'failed' })
         } finally {
-          controller.close()
+          try {
+            controller.close()
+          } catch {
+            /* already closed */
+          }
         }
       },
     })
