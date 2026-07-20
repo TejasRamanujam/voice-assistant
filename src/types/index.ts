@@ -8,14 +8,6 @@ export interface Message {
   tools?: ToolResult[]
 }
 
-export interface Conversation {
-  id: string
-  title: string
-  messages: Message[]
-  createdAt: Date
-  updatedAt: Date
-}
-
 export type AssistantState = 'idle' | 'listening' | 'processing' | 'speaking'
 
 export interface UserPreferences {
