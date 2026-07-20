@@ -140,10 +140,14 @@ async function searchWeb(query: string): Promise<string> {
     const chunks: Array<{ web?: { uri?: string; title?: string } }> =
       data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []
     const sources = chunks
-      .map(c => c.web?.title || c.web?.uri)
+      .map(c => {
+        const uri = c.web?.uri
+        if (!uri) return c.web?.title
+        return `${c.web?.title || 'Source'} — ${uri}`
+      })
       .filter(Boolean)
       .slice(0, 3)
-    return sources.length ? `${answer}\n\nSources: ${sources.join(', ')}` : answer
+    return sources.length ? `${answer}\n\nSources:\n${sources.join('\n')}` : answer
   } catch {
     return `Web search failed for "${query}" — answer from your own knowledge and say the search was unavailable.`
   }

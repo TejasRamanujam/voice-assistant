@@ -3,6 +3,7 @@ import type OpenAI from 'openai'
 import { getClient, MAX_TOKENS, MODEL, SYSTEM_PROMPT } from '@/lib/anthropic'
 import { executeTool, openaiToolDefinitions } from '@/lib/tools'
 import {
+  CHAT_STREAM_TIMEOUT_MS,
   MAX_AGENT_STEPS,
   MAX_MESSAGE_CHARS,
   MAX_TOOL_CALLS_PER_STEP,
@@ -10,16 +11,33 @@ import {
 } from '@/lib/limits'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit'
 
-// -- NEXTAUTH/PERSISTENCE (re-enable with NextAuth) --
-// import { getServerSession } from 'next-auth'
-// import { authOptions } from '@/lib/auth'
-// import { prisma } from '@/lib/prisma'
-
 type Message = OpenAI.ChatCompletionMessageParam
 type ToolReceipt = { toolName: string; result: string }
+type StreamToolCall = {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
 
 function receipt(result: string) {
-  return result.replace(/\s+/g, ' ').slice(0, 180)
+  const sourceMarker = result.search(/\n\nSources:\s*/i)
+  if (sourceMarker < 0) return result.replace(/\s+/g, ' ').slice(0, 420)
+
+  const answer = result.slice(0, sourceMarker).replace(/\s+/g, ' ').trim()
+  const sources = result
+    .slice(sourceMarker)
+    .replace(/^\s*Sources:\s*/i, '')
+    .split('\n')
+    .map((source) => source.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' · ')
+    .slice(0, 420)
+  return `${answer.slice(0, 260)}${answer.length > 260 ? '…' : ''} Sources: ${sources}`.slice(0, 720)
+}
+
+function ndjson(value: object) {
+  return `${JSON.stringify(value)}\n`
 }
 
 export async function POST(req: NextRequest) {
@@ -51,73 +69,128 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // -- NEXTAUTH (re-enable with NextAuth) --
-    // const session = await getServerSession(authOptions)
-    // const userId = session?.user?.id
-
     const messages: Message[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: message },
     ]
-
-    let responseText = ''
-    const toolResults: ToolReceipt[] = []
-
-    // Agentic loop — handles tool calls until end_turn
-    for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
-      const response = await getClient().chat.completions.create({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        tools: openaiToolDefinitions,
-        messages,
-      })
-
-      const choice = response.choices[0]
-
-      if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls?.length) {
-        if (choice.message.tool_calls.length > MAX_TOOL_CALLS_PER_STEP) {
-          return NextResponse.json({ error: 'tool_budget_exceeded' }, { status: 502 })
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        // enqueue throws once the client disconnects; swallow it so the agent
+        // loop can wind down instead of crashing the invocation.
+        const send = (event: object) => {
+          try {
+            controller.enqueue(encoder.encode(ndjson(event)))
+          } catch {
+            /* client gone */
+          }
         }
-        messages.push(choice.message)
 
-        for (const toolCall of choice.message.tool_calls) {
-          if (toolCall.type !== 'function') continue
-          const fn = (toolCall as { id: string; type: 'function'; function: { name: string; arguments: string } }).function
-          const result = await executeTool(
-            fn.name,
-            JSON.parse(fn.arguments || '{}')
-          )
-          toolResults.push({ toolName: fn.name, result: receipt(result) })
-          messages.push({
-            role: 'tool',
-            tool_call_id: (toolCall as { id: string }).id,
-            content: result,
-          })
+        try {
+          let responseText = ''
+          const toolResults: ToolReceipt[] = []
+
+          // Tool-call turns stay internal; only the final answer is streamed.
+          for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
+            const completion = await getClient().chat.completions.create(
+              {
+                model: MODEL,
+                max_tokens: MAX_TOKENS,
+                tools: openaiToolDefinitions,
+                messages,
+                stream: true,
+              },
+              { signal: AbortSignal.timeout(CHAT_STREAM_TIMEOUT_MS) }
+            )
+            const toolCalls = new Map<number, StreamToolCall>()
+            let finishReason: string | null = null
+
+            for await (const chunk of completion) {
+              const choice = chunk.choices[0]
+              if (!choice) continue
+              finishReason = choice.finish_reason ?? finishReason
+
+              if (choice.delta.content) {
+                responseText += choice.delta.content
+                send({ type: 'delta', text: choice.delta.content })
+              }
+
+              for (const fragment of choice.delta.tool_calls ?? []) {
+                const current = toolCalls.get(fragment.index) ?? {
+                  id: '',
+                  type: 'function' as const,
+                  function: { name: '', arguments: '' },
+                }
+                if (fragment.id) current.id += fragment.id
+                if (fragment.function?.name) current.function.name += fragment.function.name
+                if (fragment.function?.arguments) {
+                  current.function.arguments += fragment.function.arguments
+                }
+                toolCalls.set(fragment.index, current)
+              }
+            }
+
+            if (finishReason === 'tool_calls' && toolCalls.size) {
+              if (toolCalls.size > MAX_TOOL_CALLS_PER_STEP) {
+                send({ type: 'error', error: 'tool_budget_exceeded' })
+                return
+              }
+
+              const calls = [...toolCalls.entries()]
+                .sort(([left], [right]) => left - right)
+                .map(([, call]) => call)
+              messages.push({ role: 'assistant', content: null, tool_calls: calls })
+
+              for (const toolCall of calls) {
+                send({ type: 'tool', name: toolCall.function.name })
+                const result = await executeTool(
+                  toolCall.function.name,
+                  JSON.parse(toolCall.function.arguments || '{}')
+                )
+                toolResults.push({
+                  toolName: toolCall.function.name,
+                  result: receipt(result),
+                })
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: result,
+                })
+              }
+              continue
+            }
+
+            if (responseText) {
+              send({ type: 'done', conversationId: null, toolResults })
+              return
+            }
+            break
+          }
+
+          send({ type: 'error', error: 'agent_loop_exceeded' })
+        } catch (error) {
+          console.error('Chat stream error:', error)
+          const status = (error as { status?: number })?.status
+          send({ type: 'error', error: status === 429 ? 'rate_limited' : 'failed' })
+        } finally {
+          try {
+            controller.close()
+          } catch {
+            /* already closed */
+          }
         }
-        continue
-      }
+      },
+    })
 
-      responseText = choice.message.content ?? ''
-      break
-    }
-
-    if (!responseText) {
-      return NextResponse.json({ error: 'agent_loop_exceeded' }, { status: 502 })
-    }
-
-    // -- PERSISTENCE (re-enable with NextAuth) --
-    // if (userId) {
-    //   const conv = await prisma.conversation.create({ data: { userId, title: message.slice(0, 50) } })
-    //   await prisma.message.createMany({ data: [
-    //     { conversationId: conv.id, role: 'user', content: message },
-    //     { conversationId: conv.id, role: 'assistant', content: responseText },
-    //   ]})
-    // }
-
-    return NextResponse.json({ response: responseText, conversationId: null, toolResults })
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+      },
+    })
   } catch (error) {
     console.error('Chat error:', error)
-    // Surface upstream rate limiting so the UI can say something honest.
     const status = (error as { status?: number })?.status
     if (status === 429) {
       return NextResponse.json({ error: 'rate_limited' }, { status: 429 })

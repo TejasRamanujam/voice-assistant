@@ -120,11 +120,22 @@ export function TransmissionLog({
                     {m.content}
                   </p>
                   {m.tools && m.tools.length > 0 && (
-                    <ul className="mt-4 border-l border-signal/40 pl-3 space-y-1.5" aria-label="Tools used">
+                    <ul className="mt-4 border-l border-signal/40 pl-3 space-y-2" aria-label="Tools used">
                       {m.tools.map((tool, index) => (
-                        <li key={`${tool.toolName}-${index}`} className="text-[10px] sm:text-[11px] tracking-tele uppercase text-ink-dim">
-                          <span className="text-signal font-semibold">relay {String(index + 1).padStart(2, '0')}</span>
-                          {' · '}{tool.toolName.replaceAll('_', ' ')}
+                        <li key={`${tool.toolName}-${index}`} className="text-[10px] sm:text-[11px] text-ink-dim">
+                          <details className="group" open={Boolean(tool.result)}>
+                            <summary className="cursor-pointer list-none tracking-tele uppercase marker:content-none">
+                              <span className="text-signal font-semibold">relay {String(index + 1).padStart(2, '0')}</span>
+                              {' · '}{tool.toolName.replaceAll('_', ' ')}
+                              <span className="ml-2 text-[9px] text-ink-dim group-open:hidden">receipt +</span>
+                              <span className="ml-2 text-[9px] text-ink-dim hidden group-open:inline">receipt −</span>
+                            </summary>
+                            {tool.result && (
+                              <p className="mt-1.5 max-w-2xl normal-case tracking-normal leading-relaxed text-ink-mid whitespace-pre-wrap">
+                                {tool.result}
+                              </p>
+                            )}
+                          </details>
                         </li>
                       ))}
                     </ul>

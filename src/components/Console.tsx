@@ -10,7 +10,7 @@ import { SettingsSheet } from './SettingsSheet'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
 import { useWakeWord } from '@/hooks/useWakeWord'
-import type { AssistantState, Message, UserPreferences } from '@/types'
+import type { AssistantState, Message, ToolResult, UserPreferences } from '@/types'
 
 const DEFAULT_PREFS: UserPreferences = {
   voiceName: 'default',
@@ -121,19 +121,100 @@ export function Console() {
           return
         }
         if (!res.ok) throw new Error('Failed to get response')
-        const data = await res.json()
-        if (data.conversationId) setConversationId(data.conversationId)
-
-        const assistantMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: data.response,
-          createdAt: new Date(),
-          tools: data.toolResults,
+        const contentType = res.headers.get('content-type') ?? ''
+        if (!contentType.includes('application/x-ndjson') || !res.body) {
+          const data = await res.json()
+          if (data.conversationId) setConversationId(data.conversationId)
+          setMessages(prev => [
+            ...prev,
+            {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: data.response,
+              createdAt: new Date(),
+              tools: data.toolResults,
+            },
+          ])
+          setState('speaking')
+          speak(data.response)
+          return
         }
-        setMessages(prev => [...prev, assistantMsg])
+
+        const assistantId = (Date.now() + 1).toString()
+        setMessages(prev => [
+          ...prev,
+          { id: assistantId, role: 'assistant', content: '', createdAt: new Date(), tools: [] },
+        ])
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let responseText = ''
+        let streamError = ''
+
+        const applyEvent = (event: {
+          type: string
+          text?: string
+          name?: string
+          error?: string
+          conversationId?: string | null
+          toolResults?: ToolResult[]
+        }) => {
+          if (event.type === 'delta' && event.text) {
+            responseText += event.text
+            setMessages(prev => prev.map(message =>
+              message.id === assistantId
+                ? { ...message, content: message.content + event.text }
+                : message
+            ))
+          } else if (event.type === 'tool' && event.name) {
+            setMessages(prev => prev.map(message =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    tools: [...(message.tools ?? []), { toolName: event.name!, result: '' }],
+                  }
+                : message
+            ))
+          } else if (event.type === 'done') {
+            if (event.conversationId) setConversationId(event.conversationId)
+            if (event.toolResults) {
+              setMessages(prev => prev.map(message =>
+                message.id === assistantId
+                  ? { ...message, tools: event.toolResults }
+                  : message
+              ))
+            }
+          } else if (event.type === 'error') {
+            streamError = event.error ?? 'failed'
+          }
+        }
+
+        while (true) {
+          const { done, value } = await reader.read()
+          buffer += decoder.decode(value, { stream: !done })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (line.trim()) applyEvent(JSON.parse(line))
+          }
+          if (done) break
+        }
+        if (buffer.trim()) applyEvent(JSON.parse(buffer))
+
+        if (streamError) {
+          setMessages(prev => prev.filter(message => message.id !== assistantId || message.content))
+          if (streamError === 'rate_limited') {
+            setError('The relay is over its free-tier rate limit — give it a minute and try again.')
+          } else {
+            setError('The relay did not answer. Check the API key and try again.')
+          }
+          setState('idle')
+          return
+        }
+
         setState('speaking')
-        speak(data.response)
+        speak(responseText)
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
         setError('The relay did not answer. Check the API key and try again.')
